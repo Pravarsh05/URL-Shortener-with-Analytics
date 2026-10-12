@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database with Partitioned Schema
+  db:
+    image: postgres:16-alpine
+    container_name: url_shortener_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: urlshortener
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d urlshortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 2. Redis with allkeys-lru eviction for cache & streams
+  redis:
+    image: redis:7-alpine
+    container_name: url_shortener_redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 3. High-Performance FastAPI Web Service
+  api:
+    build: .
+    container_name: url_shortener_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/urlshortener
+      REDIS_URL: redis://redis:6379/0
+      BASE_URL: http://localhost:8000
+      SECRET_SALT: production-secure-salt-phrase-2026
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 4. Click Analytics Pipeline Worker (Redis Streams Consumer)
+  worker:
+    build: .
+    container_name: url_shortener_worker
+    command: python -m app.worker.run_worker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/urlshortener
+      REDIS_URL: redis://redis:6379/0
+      SECRET_SALT: production-secure-salt-phrase-2026
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 5. Prometheus Observability
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: url_shortener_prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # 6. Grafana Metrics Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: url_shortener_grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

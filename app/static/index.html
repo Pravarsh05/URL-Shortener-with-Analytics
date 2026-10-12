@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PulseLink | High-Performance URL Shortener & Analytics</title>
+  <meta name="description" content="Production-grade URL Shortener with Redis caching, streams analytics pipeline, sub-50ms redirects, and deep insights." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header>
+    <div class="container navbar">
+      <a href="/" class="brand">
+        <div class="brand-icon">⚡</div>
+        <span class="brand-name">PulseLink</span>
+        <span class="brand-badge">Streams Pipeline Active</span>
+      </a>
+      <div class="nav-links">
+        <a href="/docs" class="nav-link" target="_blank"><span>API Specs</span> ↗</a>
+        <a href="/metrics" class="nav-link" target="_blank"><span>Prometheus</span> ↗</a>
+        <a href="/health" class="nav-link" target="_blank"><span>Health</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero Header -->
+    <section class="hero">
+      <div class="hero-badge">
+        <span>⚡ Sub-50ms p99 Redirects</span> • <span>Redis Cache-Aside</span> • <span>Partitioned Clicks</span>
+      </div>
+      <h1 class="hero-title">
+        Enterprise URL Shortener <br />
+        <span class="gradient-text">with Stream Analytics</span>
+      </h1>
+      <p class="hero-subtitle">
+        Engineered for 100:1 read-to-write scale with atomic Base62 Feistel codes, SSRF defense, sliding-window rate limiting, and partitioned real-time telemetry.
+      </p>
+    </section>
+
+    <!-- Shortener Input Card -->
+    <section class="glass-card form-card">
+      <form id="shortenForm">
+        <div class="input-group">
+          <label class="input-label" for="urlInput">Target Long Destination URL *</label>
+          <div class="input-wrapper">
+            <span class="input-icon">🔗</span>
+            <input type="url" id="urlInput" class="text-input" placeholder="https://example.com/long-article-or-campaign-link" required />
+          </div>
+        </div>
+
+        <div class="options-grid">
+          <div class="input-group">
+            <label class="input-label" for="aliasInput">Custom Alias (Optional)</label>
+            <div class="input-wrapper">
+              <span class="input-icon">✏️</span>
+              <input type="text" id="aliasInput" class="text-input" placeholder="e.g. promo-2026" minlength="3" maxlength="16" />
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">3-16 chars: a-z, A-Z, 0-9, _, -</div>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="expiryInput">Expiration (Optional)</label>
+            <div class="input-wrapper">
+              <span class="input-icon">⏰</span>
+              <input type="datetime-local" id="expiryInput" class="text-input" />
+            </div>
+            <div class="expiry-chips">
+              <span class="chip" data-hours="1">1 Hour</span>
+              <span class="chip" data-hours="24">24 Hours</span>
+              <span class="chip" data-hours="168">7 Days</span>
+              <span class="chip active" data-hours="0">Never</span>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" id="shortenBtn" class="btn-primary">
+          <span>⚡ Shorten URL</span>
+        </button>
+      </form>
+
+      <!-- Error Notification -->
+      <div id="errorBox" style="display:none; margin-top: 18px; padding: 14px; border-radius: var(--radius-sm); background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); color: #fda4af; font-size: 0.9rem;"></div>
+
+      <!-- Success Result Box -->
+      <div id="resultBox" class="result-card">
+        <div class="result-header">
+          <div class="result-title">✓ Short Link Ready (Cached in Redis)</div>
+        </div>
+        <div class="result-link-row">
+          <div id="resultShortUrl" class="result-url"></div>
+          <button id="copyBtn" class="btn-icon" onclick="copyShortUrl()">📋 Copy</button>
+          <button class="btn-icon" onclick="openQrModal()">📱 QR</button>
+          <button class="btn-icon" onclick="testRedirect()">🚀 Test 302</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics Dashboard Section -->
+    <section class="analytics-section">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Telemetry & Real-Time Analytics</h2>
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">Direct from Redis Streams & PostgreSQL click rollups</p>
+        </div>
+        <div class="analytics-search">
+          <input type="text" id="analyticsCodeInput" class="text-input" style="width: 180px; padding-left: 16px;" placeholder="Enter link code" />
+          <button class="btn-icon" onclick="searchAnalytics()" style="background: var(--accent-primary); border-color: var(--accent-primary); color: #fff;">Inspect</button>
+        </div>
+      </div>
+
+      <div id="analyticsStatus" style="color: var(--text-muted); padding: 20px 0; font-style: italic;">Enter a code or shorten a link above to view analytics.</div>
+
+      <div id="analyticsContent" style="display:none;">
+        <!-- Top Stats Row -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">TOTAL CLICKS</div>
+            <div id="statTotalClicks" class="stat-value gradient-text">0</div>
+            <div class="stat-sub">Aggregated rollups + raw events</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">UNIQUE VISITORS</div>
+            <div id="statUniqueVisitors" class="stat-value" style="color: var(--accent-cyan);">0</div>
+            <div class="stat-sub">Estimated via Redis HyperLogLog</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">STATUS & CACHE</div>
+            <div id="statActive" class="stat-value" style="color: var(--accent-emerald); font-size: 1.8rem;">Active</div>
+            <div class="stat-sub">Redis Cache-aside & 302 Active</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">DESTINATION</div>
+            <div id="statTargetUrl" style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; word-break: break-all; max-height: 48px; overflow: hidden; margin-top: 8px;"></div>
+            <div style="margin-top: 10px;">
+              <button onclick="disableCurrentLink()" style="background: transparent; border: 1px solid var(--accent-rose); color: var(--accent-rose); padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">Deactivate Link</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="charts-grid">
+          <!-- Timeline Card -->
+          <div class="glass-card breakdown-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div class="card-title" style="margin-bottom: 0;">Click Timeline (30-Day Window)</div>
+              <div style="font-size: 0.8rem; display: flex; gap: 12px;">
+                <span style="color: #6366f1;">● Clicks</span>
+                <span style="color: #06b6d4;">--- Unique Visitors</span>
+              </div>
+            </div>
+            <svg id="timelineSvg" viewBox="0 0 600 220" style="width: 100%; height: 220px; overflow: visible;"></svg>
+          </div>
+
+          <!-- Device Breakdown -->
+          <div class="glass-card breakdown-card">
+            <div class="card-title">Device Breakdown</div>
+            <div id="devicesList" class="breakdown-list"></div>
+          </div>
+        </div>
+
+        <!-- Secondary Breakdowns Grid -->
+        <div class="charts-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+          <div class="glass-card breakdown-card">
+            <div class="card-title">Browsers</div>
+            <div id="browsersList" class="breakdown-list"></div>
+          </div>
+          <div class="glass-card breakdown-card">
+            <div class="card-title">Top Countries</div>
+            <div id="countriesList" class="breakdown-list"></div>
+          </div>
+          <div class="glass-card breakdown-card">
+            <div class="card-title">Top Referrers</div>
+            <div id="referrersList" class="breakdown-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- QR Code Modal -->
+  <div id="qrModal" class="modal-overlay" onclick="closeQrModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <h3 style="font-size: 1.2rem; font-weight: 700;">Scan Short Link</h3>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Points directly to the 302 redirect</p>
+      <img id="qrModalImg" class="qr-image" src="" alt="QR Code" />
+      <button class="btn-icon" onclick="closeQrModal()" style="width: 100%; justify-content: center;">Close</button>
+    </div>
+  </div>
+
+  <footer>
+    <div class="container">
+      Enterprise URL Shortener with Stream Analytics • Redis Streams Worker • Partitioned PostgreSQL
+    </div>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
